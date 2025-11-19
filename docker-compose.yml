@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # Backend RDP WebSocket Server
+  rdp-server:
+    build:
+      context: ./rdp-websocket-server
+      dockerfile: Dockerfile
+    container_name: rdp-websocket-server
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - remote-desktop-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./remote-desktop-viewer
+      dockerfile: Dockerfile
+    container_name: remote-desktop-viewer
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_BACKEND_URL=http://localhost:8080
+      - BROWSER=none
+      - CHOKIDAR_USEPOLLING=true
+    networks:
+      - remote-desktop-network
+    depends_on:
+      - rdp-server
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+networks:
+  remote-desktop-network:
+    driver: bridge

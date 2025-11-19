@@ -1,13 +1,14 @@
-FROM node:16
+FROM node:16-alpine
 
 WORKDIR /app
 
 ENV BROWSER=none
-ENV CI=true
+ENV CHOKIDAR_USEPOLLING=true
+ENV WDS_SOCKET_PORT=0
 
 COPY package*.json ./
 
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 COPY . .
 
