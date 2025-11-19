@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  guacd:
+    image: guacamole/guacd
+    container_name: guacd
+    restart: unless-stopped
+    networks:
+      - guacamole-net
+
+  guacamole:
+    image: guacamole/guacamole
+    container_name: guacamole
+    restart: unless-stopped
+    environment:
+      GUACD_HOSTNAME: guacd
+      GUACD_PORT: 4822
+      # Use file-based authentication
+      GUACAMOLE_HOME: /etc/guacamole
+    ports:
+      - "9090:8080"
+    networks:
+      - guacamole-net
+    depends_on:
+      - guacd
+    volumes:
+      - ./guacamole-config:/etc/guacamole:ro
+
+networks:
+  guacamole-net:
+    driver: bridge

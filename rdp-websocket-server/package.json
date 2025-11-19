@@ -1,0 +1,17 @@
+{
+  "name": "rdp-websocket-server",
+  "version": "1.0.0",
+  "description": "WebSocket to RDP proxy server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start-simple": "node server-simple.js",
+    "start-api": "node api-server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "node-rdpjs-2": "^0.3.2",
+    "ws": "^8.14.2"
+  }
+}
