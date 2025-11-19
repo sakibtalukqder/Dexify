@@ -55,5 +55,41 @@
             <param name="enable-drive">true</param>
             <param name="create-drive-path">true</param>
         </connection>
+    
+        <connection name="RDP-192-168-3-94-1763571320783">
+            <protocol>rdp</protocol>
+            <param name="hostname">192.168.3.94</param>
+            <param name="port">3389</param>
+            <param name="username">osl</param>
+            <param name="password">osoft</param>
+            <param name="ignore-cert">true</param>
+            <param name="security">any</param>
+            <param name="enable-drive">true</param>
+            <param name="create-drive-path">true</param>
+        </connection>
+    
+        <connection name="RDP-192-168-3-94-1763572142792">
+            <protocol>rdp</protocol>
+            <param name="hostname">192.168.3.94</param>
+            <param name="port">3389</param>
+            <param name="username">osl</param>
+            <param name="password">osoft</param>
+            <param name="ignore-cert">true</param>
+            <param name="security">any</param>
+            <param name="enable-drive">true</param>
+            <param name="create-drive-path">true</param>
+        </connection>
+    
+        <connection name="RDP-192-168-3-94-1763572710121">
+            <protocol>rdp</protocol>
+            <param name="hostname">192.168.3.94</param>
+            <param name="port">3389</param>
+            <param name="username">osl</param>
+            <param name="password">osoft</param>
+            <param name="ignore-cert">true</param>
+            <param name="security">any</param>
+            <param name="enable-drive">true</param>
+            <param name="create-drive-path">true</param>
+        </connection>
     </authorize>
 </user-mapping>

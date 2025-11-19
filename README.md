@@ -1,135 +1,215 @@
-# Windows RDP Remote Desktop Viewer
+# Remote Desktop Web Application - Quick Start Guide
 
-Complete web-based solution for accessing Windows Remote Desktop (RDP) through a browser.
+## Overview
+This application allows you to connect to Windows Remote Desktop (RDP) through your web browser with automatic authentication bypass.
 
-## Project Structure
-
-```
-remote_desk/
-├── remote-desktop-viewer/    # React frontend (Port 3000)
-└── rdp-websocket-server/     # Node.js backend (Port 8080)
-```
+## Features
+- ✅ **Direct Windows RDP Connection**: Launch native Windows Remote Desktop
+- 🌐 **Browser-Based RDP**: Connect through Apache Guacamole in your browser
+- 💾 **Save Connections**: Store credentials for quick access
+- 🔐 **Auto-Authentication**: No need to login to Guacamole separately
+- 📱 **Modern UI**: Clean, responsive interface with toast notifications
 
 ## Quick Start
 
-### 1. Start Backend Server (Required First!)
+### Prerequisites
+- Docker Desktop installed and running
+- Windows PC with Remote Desktop enabled on target machines
+
+### Step 1: Start All Services
 
 ```bash
-cd rdp-websocket-server
-npm install
-npm start
+docker-compose up -d
 ```
 
-Backend will run on: http://localhost:8080
+This will start:
+- **Frontend** (localhost:3000) - Main web interface
+- **Guacamole** (localhost:9090) - RDP gateway (used internally)
+- **Guacamole Proxy** (localhost:9092) - Authentication bypass proxy
+- **RDP Launcher API** (localhost:9091) - Native RDP launcher
+- **PostgreSQL** - Guacamole database
 
-### 2. Start Frontend
+### Step 2: Initialize Guacamole Database (First Time Only)
+
+Wait 30 seconds for services to start, then run:
 
 ```bash
-cd remote-desktop-viewer
-npm install
-npm start
+docker exec -it guacamole-postgres psql -U guacamole_user -d guacamole_db -f /guacamole/schema/001-create-schema.sql
+docker exec -it guacamole-postgres psql -U guacamole_user -d guacamole_db -f /guacamole/schema/002-create-admin-user.sql
 ```
 
-Frontend will open at: http://localhost:3000
+Or simply restart the containers:
 
-## Usage
+```bash
+docker-compose restart
+```
 
-1. **Enable RDP on Target Windows PC**:
-   - Right-click "This PC" → Properties
-   - Click "Remote settings"
-   - Enable "Allow remote connections to this computer"
-   - Note the PC's IP address (run `ipconfig` in cmd)
+### Step 3: Access the Application
 
-2. **Connect from Browser**:
-   - Open http://localhost:3000
-   - Enter target PC's IP address (e.g., 192.168.3.94)
-   - Enter port (default: 3389)
-   - Enter Windows username (optional)
-   - Enter Windows password (optional)
-   - Click "Connect"
+Open your browser and go to: **http://localhost:3000**
 
-## Network Configuration
+## How to Use
 
-### For Local Network Access:
-- Ensure both PCs are on same network
-- Firewall must allow RDP (port 3389)
-- Target PC must have RDP enabled
+### Option 1: Native Windows RDP Connection
 
-### For Internet Access:
-- Configure router port forwarding (3389 → target PC)
-- Use public IP or DDNS
-- ⚠️ Security warning: Add VPN or strong authentication
+1. Enter the IP address of the remote PC
+2. Enter port (default: 3389)
+3. Enter username and password
+4. Click **"Connect"**
+5. Windows Remote Desktop will launch automatically with saved credentials
+
+### Option 2: Browser-Based Connection
+
+1. Enter the IP address, port, username, and password
+2. Click **"Connect from Browser"**
+3. A new browser tab will open with the remote desktop session
+4. **No additional login required** - you'll be connected directly!
+
+### Saving Connections
+
+After connecting, you can save the connection:
+1. Your connection appears in the "Recent Connections" section
+2. Click the save icon to name and store it
+3. Next time, just click the saved connection to reconnect instantly
+
+### Managing Saved Connections
+
+- Click saved connection to connect via Windows RDP
+- Use the browser icon to connect through your browser
+- Click the trash icon to remove saved connections
+
+## Architecture
+
+```
+┌─────────────────────┐
+│   Frontend (3000)   │ ← You access this
+└──────────┬──────────┘
+           │
+           ├─→ RDP Launcher API (9091) → Windows RDP Client
+           │
+           └─→ Guacamole Proxy (9092) ─→ Guacamole (9090) ─→ Remote PC
+                  ↑ Auto-authentication      ↑
+                  └─────────────────────────┘
+```
 
 ## Troubleshooting
 
-### "Connection failed" Error:
-- ✅ Check backend server is running (localhost:8080)
-- ✅ Verify target PC has RDP enabled
-- ✅ Confirm correct IP address and port
-- ✅ Check Windows Firewall allows RDP
-- ✅ Ensure network connectivity between machines
+### Cannot connect to remote PC
+- Ensure Remote Desktop is enabled on the target PC
+- Check Windows Firewall allows RDP (port 3389)
+- Verify network connectivity to the remote PC
 
-### "Access Denied" Error:
-- ✅ Verify Windows credentials are correct
-- ✅ Ensure user has remote desktop permissions
-- ✅ Check target PC allows remote connections
-
-### Backend Server Issues:
-- Update Node.js to version 14+
-- Reinstall dependencies: `rm -rf node_modules && npm install`
-
-## Docker Deployment
-
-### Frontend:
+### "Cannot connect to proxy service" error
 ```bash
-cd remote-desktop-viewer
-docker build -t rdp-viewer-frontend .
-docker run -p 3000:3000 rdp-viewer-frontend
+# Check if proxy is running
+docker ps | grep guacamole-proxy
+
+# View proxy logs
+docker logs guacamole-proxy
+
+# Restart proxy
+docker-compose restart guacamole-proxy
 ```
 
-### Backend:
+### "Cannot connect to launcher service" error
+```bash
+# Check if launcher is running
+docker ps | grep rdp-launcher
+
+# Restart launcher
+docker-compose restart rdp-launcher
+```
+
+### Browser connection not working
+```bash
+# Check all Guacamole services
+docker ps | grep guac
+
+# View Guacamole logs
+docker logs guacamole
+docker logs guacd
+
+# Restart all Guacamole services
+docker-compose restart guacamole guacd guacdb guacamole-proxy
+```
+
+### View all service logs
+```bash
+docker-compose logs -f
+```
+
+## Stopping Services
+
+```bash
+# Stop all services
+docker-compose down
+
+# Stop and remove all data
+docker-compose down -v
+```
+
+## Development Mode
+
+To run without Docker:
+
+1. **Start Guacamole Stack**:
+```bash
+docker-compose up guacamole guacd guacdb -d
+```
+
+2. **Start Proxy Server**:
 ```bash
 cd rdp-websocket-server
-docker build -t rdp-viewer-backend .
-docker run -p 8080:8080 rdp-viewer-backend
+node guacamole-proxy.js
 ```
 
-## Security Recommendations
+3. **Start Launcher API**:
+```bash
+cd rdp-websocket-server
+node api-server.js
+```
 
-⚠️ **Important**: This is a development setup. For production:
+4. **Start Frontend**:
+```bash
+cd remote-desktop-viewer
+npm start
+```
 
-1. **Use HTTPS/WSS**: Enable SSL certificates
-2. **Authentication**: Implement user authentication on backend
-3. **Encryption**: Encrypt credentials in transit
-4. **Rate Limiting**: Prevent brute force attacks
-5. **Access Control**: Whitelist allowed IP addresses
-6. **Logging**: Monitor and log all connections
-7. **VPN**: Use VPN for remote access instead of exposing RDP
+## Security Notes
 
-## Technical Details
+⚠️ **Important**: This application is designed for local/private network use.
 
-- **Frontend**: React 18 + TypeScript + WebSocket
-- **Backend**: Node.js + Express + WebSocket (ws) + node-rdpjs-2
-- **Protocol**: WebSocket bridge to RDP (port 3389)
-- **Resolution**: 1280x720 (configurable in server.js)
+- The proxy server bypasses Guacamole authentication for convenience
+- Default credentials: guacadmin/guacadmin
+- Saved passwords are stored in browser localStorage (encrypted recommended for production)
+- Use HTTPS in production environments
+- Restrict network access to trusted users only
 
-## Known Limitations
+## Advanced Configuration
 
-- Audio streaming not implemented
-- Clipboard sharing not implemented
-- File transfer not implemented
-- Limited to one connection per session
-- Performance depends on network speed
+### Change Guacamole Admin Password
 
-## Contributing
+1. Access Guacamole directly: http://localhost:9090/guacamole
+2. Login with: guacadmin / guacadmin
+3. Go to Settings → Users → guacadmin → Change Password
+4. Update `guacamole-proxy.js` with new credentials
 
-To improve this project:
-1. Add authentication system
-2. Implement TLS/SSL
-3. Add session management
-4. Improve error handling
-5. Add connection status indicators
+### Customize Connection Parameters
+
+Edit `rdp-websocket-server/guacamole-proxy.js` to modify RDP settings:
+- Screen resolution
+- Audio redirection
+- Drive sharing
+- Clipboard sharing
+- etc.
+
+## Support
+
+For issues or questions, check:
+- Application logs: `docker-compose logs`
+- Guacamole logs: `docker logs guacamole`
+- Proxy logs: `docker logs guacamole-proxy`
 
 ## License
 
-MIT
+MIT License - Free to use and modify

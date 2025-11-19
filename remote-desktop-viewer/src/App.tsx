@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 
 interface Connection {
@@ -55,7 +57,10 @@ function App() {
 
   const saveConnection = () => {
     if (!saveConnectionName.trim()) {
-      alert('Please enter a name for this connection');
+      toast.error('Please enter a name for this connection', {
+        position: 'top-right',
+        autoClose: 3000,
+      });
       return;
     }
 
@@ -72,23 +77,62 @@ function App() {
     setSavedConnections(prev => [...prev, newConnection]);
     setSaveConnectionName('');
     setShowSaveDialog(false);
-    alert(`✅ Connection "${newConnection.name}" saved successfully!`);
-  };
-
-  const loadConnection = (saved: SavedConnection) => {
-    setConnection({
-      ip: saved.ip,
-      port: saved.port,
-      username: saved.username,
-      password: saved.password,
-      status: 'disconnected'
+    toast.success(`Connection "${newConnection.name}" saved successfully!`, {
+      position: 'top-right',
+      autoClose: 3000,
     });
   };
 
   const removeConnection = (id: string) => {
-    if (confirm('Are you sure you want to remove this saved connection?')) {
-      setSavedConnections(prev => prev.filter(conn => conn.id !== id));
-    }
+    const connectionToRemove = savedConnections.find(conn => conn.id === id);
+    if (!connectionToRemove) return;
+    
+    // Use a custom toast with action buttons
+    toast.info(
+      <div>
+        <p>Remove "{connectionToRemove.name}"?</p>
+        <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => {
+              setSavedConnections(prev => prev.filter(conn => conn.id !== id));
+              toast.dismiss();
+              toast.success('Connection removed', { autoClose: 2000 });
+            }}
+            style={{
+              padding: '6px 12px',
+              background: '#ef4444',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.9rem'
+            }}
+          >
+            Yes, Remove
+          </button>
+          <button
+            onClick={() => toast.dismiss()}
+            style={{
+              padding: '6px 12px',
+              background: '#6b7280',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.9rem'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>,
+      {
+        position: 'top-right',
+        autoClose: false,
+        closeButton: false,
+        draggable: false,
+      }
+    );
   };
 
   const connectToSaved = (saved: SavedConnection, useBrowser: boolean = false) => {
@@ -132,16 +176,27 @@ function App() {
       if (result.success) {
         setConnection(prev => ({ ...prev, status: 'connected' }));
         setTimeout(() => {
-          alert('✅ Windows Remote Desktop is opening!\n\nYour credentials have been saved. The connection should open automatically.');
+          toast.success('Windows Remote Desktop is opening! Your credentials have been saved.', {
+            position: 'top-right',
+            autoClose: 5000,
+          });
         }, 500);
       } else {
         setError('Failed to launch RDP: ' + result.message);
         setConnection(prev => ({ ...prev, status: 'error' }));
+        toast.error('Failed to launch RDP: ' + result.message, {
+          position: 'top-right',
+          autoClose: 5000,
+        });
       }
     })
     .catch(err => {
       setError('Cannot connect to launcher service. Make sure the API server is running on port 9091.');
       setConnection(prev => ({ ...prev, status: 'error' }));
+      toast.error('Cannot connect to launcher service. Make sure the API server is running on port 9091.', {
+        position: 'top-right',
+        autoClose: 5000,
+      });
       console.error('Connection error:', err);
     });
   };
@@ -149,11 +204,19 @@ function App() {
   const handleConnect = () => {
     if (!connection.ip) {
       setError('Please enter an IP address');
+      toast.warning('Please enter an IP address', {
+        position: 'top-right',
+        autoClose: 3000,
+      });
       return;
     }
 
     if (!connection.username || !connection.password) {
       setError('Username and password are required for RDP connection');
+      toast.warning('Username and password are required for RDP connection', {
+        position: 'top-right',
+        autoClose: 3000,
+      });
       return;
     }
 
@@ -163,7 +226,12 @@ function App() {
   };
 
   const handleConnectBrowserWithData = (data: { ip: string; port: string; username: string; password: string }) => {
-    fetch('http://localhost:9091/api/create-guacamole-connection', {
+    toast.info('Creating browser connection...', {
+      position: 'top-right',
+      autoClose: 2000,
+    });
+
+    fetch('http://localhost:9092/api/create-connection', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -174,18 +242,37 @@ function App() {
     .then(result => {
       if (result.success) {
         setConnection(prev => ({ ...prev, status: 'connected' }));
-        window.open('http://localhost:9090/guacamole', '_blank');
-        setTimeout(() => {
-          alert('✅ Guacamole is opening!\n\nLogin: admin / admin\nThen click on your connection to connect.');
-        }, 500);
+        
+        // Open Guacamole client directly with the connection
+        const guacUrl = `http://localhost:9092/guacamole/#/client/${result.connectionId}?token=${result.token}`;
+        window.open(guacUrl, '_blank');
+        
+        toast.success(
+          `Opening browser connection to ${data.ip}...`,
+          {
+            position: 'top-right',
+            autoClose: 3000,
+          }
+        );
       } else {
-        setError('Failed to create Guacamole connection: ' + result.message);
+        const errorMsg = result.message || 'Unexpected internal error';
+        const detailsMsg = result.details ? ` (${JSON.stringify(result.details)})` : '';
+        setError('Failed to create browser connection: ' + errorMsg);
         setConnection(prev => ({ ...prev, status: 'error' }));
+        toast.error(`Failed to create browser connection: ${errorMsg}${detailsMsg}`, {
+          position: 'top-right',
+          autoClose: 7000,
+        });
+        console.error('Browser connection failed:', result);
       }
     })
     .catch(err => {
-      setError('Cannot connect to API service. Make sure the API server is running on port 9091.');
+      setError('Cannot connect to proxy service. Make sure the proxy server is running on port 9092.');
       setConnection(prev => ({ ...prev, status: 'error' }));
+      toast.error('Cannot connect to proxy service. Make sure the proxy server is running on port 9092.', {
+        position: 'top-right',
+        autoClose: 5000,
+      });
       console.error('Connection error:', err);
     });
   };
@@ -193,11 +280,19 @@ function App() {
   const handleConnectBrowser = () => {
     if (!connection.ip) {
       setError('Please enter an IP address');
+      toast.warning('Please enter an IP address', {
+        position: 'top-right',
+        autoClose: 3000,
+      });
       return;
     }
 
     if (!connection.username || !connection.password) {
       setError('Username and password are required for RDP connection');
+      toast.warning('Username and password are required for RDP connection', {
+        position: 'top-right',
+        autoClose: 3000,
+      });
       return;
     }
 
@@ -212,28 +307,6 @@ function App() {
       wsRef.current = null;
     }
     setConnection(prev => ({ ...prev, status: 'disconnected' }));
-  };
-
-  const drawBitmap = (bitmapData: any) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    try {
-      // Decode base64 bitmap data
-      const imageData = ctx.createImageData(bitmapData.width, bitmapData.height);
-      const binaryData = atob(bitmapData.data);
-      
-      for (let i = 0; i < binaryData.length; i++) {
-        imageData.data[i] = binaryData.charCodeAt(i);
-      }
-      
-      ctx.putImageData(imageData, bitmapData.x, bitmapData.y);
-    } catch (err) {
-      console.error('Error drawing bitmap:', err);
-    }
   };
 
   const drawFrame = (data: any) => {
@@ -265,27 +338,20 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connection.status]);
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (connection.status === 'connected' && wsRef.current) {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      // Send mouse click to remote
-      wsRef.current.send(JSON.stringify({
-        type: 'mouse',
-        action: 'click',
-        x,
-        y
-      }));
-    }
-  };
-
   return (
     <div className="App">
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={true}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+      />
       <header className="header">
         <h1>🖥️ Remote Desktop Viewer</h1>
         <p className="subtitle">Connect to remote computers via IP address</p>

@@ -1,24 +1,80 @@
 version: '3.8'
 
 services:
-  # Backend RDP WebSocket Server
-  rdp-server:
-    build:
-      context: ./rdp-websocket-server
-      dockerfile: Dockerfile
-    container_name: rdp-websocket-server
-    ports:
-      - "8080:8080"
+  # PostgreSQL Database for Guacamole
+  guacdb:
+    image: postgres:13
+    container_name: guacamole-postgres
     environment:
-      - NODE_ENV=production
+      POSTGRES_DB: guacamole_db
+      POSTGRES_USER: guacamole_user
+      POSTGRES_PASSWORD: guacamole_pass
+    volumes:
+      - guacamole-data:/var/lib/postgresql/data
+      - ./guacamole-config/initdb.sql:/docker-entrypoint-initdb.d/initdb.sql
     networks:
       - remote-desktop-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      test: ["CMD-SHELL", "pg_isready -U guacamole_user -d guacamole_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Guacd Daemon
+  guacd:
+    image: guacamole/guacd:latest
+    container_name: guacd
+    networks:
+      - remote-desktop-network
+    restart: unless-stopped
+
+  # Guacamole Web Application
+  guacamole:
+    image: guacamole/guacamole:latest
+    container_name: guacamole
+    ports:
+      - "9090:8080"
+    environment:
+      GUACD_HOSTNAME: guacd
+      POSTGRES_HOSTNAME: guacdb
+      POSTGRES_DATABASE: guacamole_db
+      POSTGRES_USER: guacamole_user
+      POSTGRES_PASSWORD: guacamole_pass
+    networks:
+      - remote-desktop-network
+    depends_on:
+      guacdb:
+        condition: service_healthy
+      guacd:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/guacamole/"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
+
+  # Guacamole Proxy (Auth Bypass)
+  guacamole-proxy:
+    build:
+      context: ./rdp-websocket-server
+      dockerfile: Dockerfile
+    container_name: guacamole-proxy
+    ports:
+      - "9092:9092"
+    environment:
+      - NODE_ENV=production
+      - PORT=9092
+      - GUACAMOLE_URL=http://guacamole:8080/guacamole
+    networks:
+      - remote-desktop-network
+    depends_on:
+      guacamole:
+        condition: service_healthy
+    command: node guacamole-proxy.js
+    restart: unless-stopped
 
   # Frontend React App
   frontend:
@@ -29,17 +85,24 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_BACKEND_URL=http://localhost:8080
+      - REACT_APP_BACKEND_URL=http://localhost:9092
       - BROWSER=none
       - CHOKIDAR_USEPOLLING=true
+      - WDS_SOCKET_PORT=3000
+      - WATCHPACK_POLLING=true
     networks:
       - remote-desktop-network
     depends_on:
-      - rdp-server
+      - guacamole-proxy
     restart: unless-stopped
     stdin_open: true
     tty: true
+    volumes:
+      - ./remote-desktop-viewer/src:/app/src:ro
 
 networks:
   remote-desktop-network:
     driver: bridge
+
+volumes:
+  guacamole-data:

@@ -6,34 +6,55 @@ const { exec } = require('child_process');
 const os = require('os');
 
 const app = express();
-const PORT = 9091;
+const PORT = process.env.PORT || 9091;
 
-app.use(cors());
+// Enhanced CORS configuration
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
 app.use(express.json());
+
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'RDP Launcher API Running',
+    port: PORT,
+    platform: os.platform(),
+    hostname: os.hostname(),
+    info: 'POST to /api/launch-rdp to launch RDP connections'
+  });
+});
 
 // API to launch RDP connection directly
 app.post('/api/launch-rdp', (req, res) => {
   const { ip, port, username, password } = req.body;
 
+  console.log(`📞 Received RDP launch request for ${username}@${ip}:${port || 3389}`);
+
   if (!ip || !username) {
+    console.error('❌ Missing required fields');
     return res.json({ success: false, message: 'IP and username are required' });
   }
 
   try {
     // First, save credentials using cmdkey (Windows Credential Manager)
     if (password) {
-      const cmdkeyCommand = `cmdkey /generic:TERMSRV/${ip} /user:${username} /pass:${password}`;
+      const cmdkeyCommand = `cmdkey /generic:TERMSRV/${ip} /user:"${username}" /pass:"${password}"`;
       
-      exec(cmdkeyCommand, (error) => {
+      exec(cmdkeyCommand, (error, stdout, stderr) => {
         if (error) {
-          console.error(`Warning: Failed to store credentials: ${error.message}`);
+          console.error(`⚠️ Warning: Failed to store credentials: ${error.message}`);
         } else {
           console.log(`✅ Stored credentials for ${username}@${ip}`);
         }
       });
     }
 
-    // Create RDP file content
+    // Create RDP file content with enhanced settings
     const rdpContent = `screen mode id:i:2
 use multimon:i:0
 desktopwidth:i:1920
@@ -50,10 +71,10 @@ bandwidthautodetect:i:1
 displayconnectionbar:i:1
 enableworkspacereconnect:i:0
 disable wallpaper:i:0
-allow font smoothing:i:0
-allow desktop composition:i:0
-disable full window drag:i:1
-disable menu anims:i:1
+allow font smoothing:i:1
+allow desktop composition:i:1
+disable full window drag:i:0
+disable menu anims:i:0
 disable themes:i:0
 disable cursor setting:i:0
 bitmapcachepersistenable:i:1
@@ -65,7 +86,7 @@ redirectsmartcards:i:1
 redirectclipboard:i:1
 redirectposdevices:i:0
 autoreconnection enabled:i:1
-authentication level:i:2
+authentication level:i:0
 prompt for credentials:i:0
 negotiate security layer:i:1
 remoteapplicationmode:i:0
@@ -82,7 +103,9 @@ rdgiskdcproxy:i:0
 kdcproxyname:s:
 username:s:${username}
 domain:s:
-drivestoredirect:s:`;
+drivestoredirect:s:
+enablecredsspsupport:i:1
+smart sizing:i:1`;
 
     // Create temp directory if it doesn't exist
     const tempDir = path.join(os.tmpdir(), 'rdp-connections');
@@ -91,20 +114,31 @@ drivestoredirect:s:`;
     }
 
     // Write RDP file to temp directory
-    const filename = `remote-${ip}-${Date.now()}.rdp`;
+    const filename = `remote-${ip.replace(/\./g, '-')}-${Date.now()}.rdp`;
     const filepath = path.join(tempDir, filename);
-    fs.writeFileSync(filepath, rdpContent);
+    fs.writeFileSync(filepath, rdpContent, { encoding: 'utf8' });
 
     console.log(`✅ Created RDP file: ${filepath}`);
 
+    // Send response immediately
+    res.json({ 
+      success: true, 
+      message: 'RDP connection launched successfully',
+      ip: ip,
+      port: port || '3389',
+      username: username
+    });
+
     // Wait a moment for credentials to be stored, then launch RDP
     setTimeout(() => {
-      const command = `start mstsc "${filepath}"`;
+      const command = process.platform === 'win32' 
+        ? `start mstsc "${filepath}"`
+        : `xdg-open "${filepath}"`;
       
       exec(command, (error, stdout, stderr) => {
         if (error) {
-          console.error(`Error launching RDP: ${error.message}`);
-          return res.json({ success: false, message: 'Failed to launch RDP client' });
+          console.error(`❌ Error launching RDP: ${error.message}`);
+          return;
         }
         
         console.log(`🚀 Launched RDP connection to ${ip}`);
@@ -119,17 +153,12 @@ drivestoredirect:s:`;
           } catch (err) {
             console.error(`Failed to clean up temp file: ${err.message}`);
           }
-        }, 5000);
+        }, 10000); // Wait 10 seconds before cleanup
       });
     }, 500);
 
-    res.json({ 
-      success: true, 
-      message: 'RDP connection launched successfully'
-    });
-
   } catch (err) {
-    console.error('Error:', err);
+    console.error('❌ Error:', err);
     res.json({ 
       success: false, 
       message: err.message 
@@ -137,81 +166,44 @@ drivestoredirect:s:`;
   }
 });
 
-// API to create Guacamole connection dynamically
-app.post('/api/create-guacamole-connection', (req, res) => {
-  const { ip, port, username, password } = req.body;
-
-  if (!ip || !username || !password) {
-    return res.json({ success: false, message: 'IP, username and password are required' });
-  }
-
-  try {
-    const connectionName = `RDP-${ip.replace(/\./g, '-')}-${Date.now()}`;
-    
-    // Read existing user-mapping.xml or create new one
-    const configPath = path.join(__dirname, '..', 'guacamole-config', 'user-mapping.xml');
-    let xml = '';
-    
-    if (fs.existsSync(configPath)) {
-      xml = fs.readFileSync(configPath, 'utf8');
-      // Remove closing tags to append new connection
-      xml = xml.replace('</authorize>', '').replace('</user-mapping>', '');
-    } else {
-      xml = `<user-mapping>\n    <authorize username="admin" password="admin">\n`;
-    }
-    
-    // Add new connection
-    xml += `        <connection name="${connectionName}">\n`;
-    xml += `            <protocol>rdp</protocol>\n`;
-    xml += `            <param name="hostname">${ip}</param>\n`;
-    xml += `            <param name="port">${port || '3389'}</param>\n`;
-    xml += `            <param name="username">${username}</param>\n`;
-    xml += `            <param name="password">${password}</param>\n`;
-    xml += `            <param name="ignore-cert">true</param>\n`;
-    xml += `            <param name="security">any</param>\n`;
-    xml += `            <param name="enable-drive">true</param>\n`;
-    xml += `            <param name="create-drive-path">true</param>\n`;
-    xml += `        </connection>\n`;
-    xml += `    </authorize>\n</user-mapping>`;
-    
-    // Write updated XML
-    fs.writeFileSync(configPath, xml);
-    console.log(`✅ Added Guacamole connection: ${connectionName}`);
-    
-    // Restart Guacamole to load new connection
-    exec('docker restart guacamole', (error) => {
-      if (error) {
-        console.error('Failed to restart Guacamole:', error.message);
-      } else {
-        console.log('🔄 Restarted Guacamole container');
-      }
-    });
-    
-    res.json({ 
-      success: true, 
-      connectionName,
-      message: 'Guacamole connection created successfully'
-    });
-    
-  } catch (err) {
-    console.error('Error:', err);
-    res.json({ 
-      success: false, 
-      message: err.message 
-    });
-  }
-});
-
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'RDP Launcher API Running',
-    port: PORT,
-    info: 'POST to /api/launch-rdp to launch RDP connections'
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('❌ Server error:', err);
+  res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    error: err.message
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 RDP Launcher API running on http://localhost:${PORT}`);
-  console.log('📡 Ready to launch RDP connections automatically');
+// Start server on all interfaces
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('========================================');
+  console.log('🚀 RDP Launcher API Server Started');
+  console.log('========================================');
+  console.log(`📡 Listening on: http://0.0.0.0:${PORT}`);
+  console.log(`🌐 Local access: http://localhost:${PORT}`);
+  console.log(`💻 Platform: ${os.platform()}`);
+  console.log(`🖥️  Hostname: ${os.hostname()}`);
+  console.log('📝 Ready to launch RDP connections');
+  console.log('========================================');
+  console.log();
+  console.log('API Endpoints:');
+  console.log(`  GET  /           - Health check`);
+  console.log(`  POST /api/launch-rdp - Launch RDP connection`);
+  console.log();
+  console.log('Press Ctrl+C to stop');
+  console.log('========================================');
+});
+
+// Handle shutdown gracefully
+process.on('SIGINT', () => {
+  console.log('\n\n🛑 Shutting down RDP Launcher API...');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n\n🛑 Shutting down RDP Launcher API...');
+  process.exit(0);
 });
 
