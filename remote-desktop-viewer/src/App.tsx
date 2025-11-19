@@ -353,7 +353,7 @@ function App() {
         theme="dark"
       />
       <header className="header">
-        <h1>🖥️ Remote Desktop Viewer</h1>
+        <h1>🖥️ Dexify</h1>
         <p className="subtitle">Connect to remote computers via IP address</p>
       </header>
 
